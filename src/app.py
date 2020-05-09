@@ -1,6 +1,7 @@
 from fastai import *
 from fastai.vision import *
 import fastai
+from torchvision import datasets, transforms, models
 import yaml
 import sys
 from io import BytesIO
@@ -19,8 +20,9 @@ app = Flask(__name__)
 
 
 def load_model(path=".", model_name="model.pkl"):
-    learn = load_learner(path, fname=model_name)
-    return learn
+    model = torch.load(model_name)
+    model.eval()
+    return model
 
 
 def load_image_url(url: str) -> Image:
@@ -56,20 +58,21 @@ class ConvolutionalNetwork(nn.Module):
 
 
 def predict(img, n: int = 3) -> Dict[str, Union[str, List]]:
-    pred_class, pred_idx, outputs = model.predict(img)
-    pred_probs = outputs / sum(outputs)
-    pred_probs = pred_probs.tolist()
-    predictions = []
-    for image_class, output, prob in zip(model.data.classes, outputs.tolist(), pred_probs):
-        output = round(output, 1)
-        prob = round(prob, 2)
-        predictions.append(
-            {"class": image_class.replace("_", " "), "output": output, "prob": prob}
-        )
+    model.eval()
+    test_transform = transforms.Compose([
+        transforms.Resize(224),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406],
+                             [0.229, 0.224, 0.225])
+    ])
+    img = test_transform(img)
+    with torch.no_grad():
+        preds = model(img.view(1,3,224,224))
+        class_ = model(img.view(1,3,224,224)).argmax()
 
-    predictions = sorted(predictions, key=lambda x: x["output"], reverse=True)
-    predictions = predictions[0:n]
-    return {"class": str(pred_class), "predictions": predictions}
+    
+    return {"class": str(class_), "predictions": preds}
 
 
 @app.route('/api/classify', methods=['POST', 'GET'])
